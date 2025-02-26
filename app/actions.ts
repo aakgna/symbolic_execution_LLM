@@ -15,6 +15,86 @@ export async function analyzeCode(code: string): Promise<AnalysisResult> {
 	const codePath = join(tempDir, "code.py");
 	await writeFile(codePath, code);
 
+	try {
+		const { execSync } = require("child_process");
+
+		// Execute the Python script and capture its output
+		// Make sure to pass your code file as an argument
+		const analysisResult = execSync(
+			`/Users/aakgna/Downloads/myenv/bin/python3 /Users/aakgna/Desktop/CS_206/final_project/api/analyze.py ${codePath}`,
+			{
+				encoding: "utf-8",
+				maxBuffer: 1024 * 1024 * 10, // Increase buffer size if needed
+			}
+		);
+
+		// Parse the JSON output from the Python script
+		const result: AnalysisResult = JSON.parse(analysisResult);
+		console.log("Results:");
+		console.log(result["coverage"]);
+		return result;
+	} catch (error) {
+		console.error("Error running test case generation:", error);
+		await new Promise((resolve) => setTimeout(resolve, 1500));
+
+		// Parse code to find function name for test cases
+		const functionMatch = code.match(/def\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(/);
+		const functionName = functionMatch ? functionMatch[1] : "unknown_function";
+
+		// Generate mock analysis results
+		const lines = code.split("\n");
+		const hasDeadCode = code.includes("# This will be detected as dead code");
+
+		const result: AnalysisResult = {
+			testCases: {
+				total: 3,
+				passed: 2,
+				cases: [
+					{
+						input: `${functionName}(5)`,
+						expected: "10",
+						actual: "10",
+						passed: true,
+					},
+					{
+						input: `${functionName}(0)`,
+						expected: "0",
+						actual: "0",
+						passed: true,
+					},
+					{
+						input: `${functionName}(-5)`,
+						expected: "-10",
+						actual: "-5",
+						passed: false,
+					},
+				],
+			},
+			coverage: {
+				percentage: 80,
+				lines: lines.map((text, index) => ({
+					text,
+					covered: !text.includes("dead code"),
+				})),
+			},
+			deadCode: {
+				found: hasDeadCode,
+				instances: hasDeadCode
+					? [
+							{
+								line: lines.findIndex((line) => line.includes("dead code")) + 1,
+								code: lines.find((line) => line.includes("dead code")) || "",
+								reason:
+									"This code is unreachable because it follows a return statement",
+							},
+					  ]
+					: [],
+			},
+		};
+
+		return result;
+	}
+
 	// Run Python analysis script
 	// In a real implementation, you would have a Python script that:
 	// 1. Generates test cases
@@ -25,62 +105,4 @@ export async function analyzeCode(code: string): Promise<AnalysisResult> {
 	// In a real implementation, you would run a Python script and parse its output
 
 	// Simulate a delay for analysis
-	await new Promise((resolve) => setTimeout(resolve, 1500));
-
-	// Parse code to find function name for test cases
-	const functionMatch = code.match(/def\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(/);
-	const functionName = functionMatch ? functionMatch[1] : "unknown_function";
-
-	// Generate mock analysis results
-	const lines = code.split("\n");
-	const hasDeadCode = code.includes("# This will be detected as dead code");
-
-	const result: AnalysisResult = {
-		testCases: {
-			total: 3,
-			passed: 2,
-			cases: [
-				{
-					input: `${functionName}(5)`,
-					expected: "10",
-					actual: "10",
-					passed: true,
-				},
-				{
-					input: `${functionName}(0)`,
-					expected: "0",
-					actual: "0",
-					passed: true,
-				},
-				{
-					input: `${functionName}(-5)`,
-					expected: "-10",
-					actual: "-5",
-					passed: false,
-				},
-			],
-		},
-		coverage: {
-			percentage: 80,
-			lines: lines.map((text, index) => ({
-				text,
-				covered: !text.includes("dead code"),
-			})),
-		},
-		deadCode: {
-			found: hasDeadCode,
-			instances: hasDeadCode
-				? [
-						{
-							line: lines.findIndex((line) => line.includes("dead code")) + 1,
-							code: lines.find((line) => line.includes("dead code")) || "",
-							reason:
-								"This code is unreachable because it follows a return statement",
-						},
-				  ]
-				: [],
-		},
-	};
-
-	return result;
 }
