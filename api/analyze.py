@@ -6,35 +6,35 @@ from typing import Dict, List, Any, Tuple
 import openai
 from dotenv import load_dotenv
 
-# Load environment variables
 load_dotenv()
 
-# Configure OpenAI API
+# configure OpenAI API
+# FIXME: NEED TO ADD ANOTHER METHOD BESIDES API KEY
+# CodeAnalyzer should analyze teh code with API to create the tests
 
 class CodeAnalyzer:
     def __init__(self, code: str):
         self.code = code
         self.function_name = self._extract_function_name()
-        
+
+    # find match and return, if not return unknown    
     def _extract_function_name(self) -> str:
-        """Extract function name from the TypeScript code"""
         match = re.search(r'export async function (\w+)', self.code)
         if match:
             return match.group(1)
         return "unknown_function"
     
+    # extract branches and get the test cases from OpenAI
+    # find dead code and create coverage
+    # return dictionary of strings that hold the branches
+    # should have test cases, coverage, the dead code
+    # and total branches that were found
     def analyze(self) -> Dict[str, Any]:
-        """Analyze the code using OpenAI API to create comprehensive test cases"""
-        # Extract branches and logical paths in the code
         branches = self._extract_branches()
-        
-        # Get test cases from OpenAI
         test_cases = self._generate_test_cases(branches)
         
-        # Analyze for potential dead code
+        # find potential dead code
         dead_code = self._analyze_dead_code()
-        
-        # Create coverage analysis
         coverage = self._analyze_coverage(test_cases)
         
         return {
@@ -44,16 +44,19 @@ class CodeAnalyzer:
             "branchesFound": branches
         }
     
+    # helper function to extract conditional branches from code
+    # FIXED: move if statement, switch cases, and loops here
+    # FIXME: add checks for switch patterns
     def _extract_branches(self) -> List[Dict[str, Any]]:
-        """Extract conditional branches from the code"""
         branches = []
-        
-        # Find all if statements, switch cases, and loops
         if_pattern = r'if\s*\((.*?)\)'
         ternary_pattern = r'\?(.*?):(.*?);'
         switch_pattern = r'switch\s*\((.*?)\)'
         
-        # Extract if conditions
+        # extract if conditions
+        # FIXME: add extraction for if else statements
+        # logic should be 'separate branch'
+        # include the parameter?
         if_conditions = re.findall(if_pattern, self.code)
         for condition in if_conditions:
             branches.append({
@@ -67,7 +70,7 @@ class CodeAnalyzer:
                 "description": f"Branch when {condition.strip()} is false"
             })
         
-        # Extract ternary operations
+        # extract ternary operations
         ternaries = re.findall(ternary_pattern, self.code)
         for i, ternary in enumerate(ternaries):
             true_part, false_part = ternary
@@ -77,7 +80,9 @@ class CodeAnalyzer:
                 "description": f"Ternary operation with true path: {true_part} and false path: {false_part}"
             })
         
-        # Process specific function logic in the code
+        # if condition to process specific function logic within code
+        # basically check which branch is true when function is found
+        # or which code is dead, so that branch never executes
         if "functionMatch" in self.code and "hasDeadCode" in self.code:
             branches.append({
                 "type": "functionMatch",
@@ -92,12 +97,13 @@ class CodeAnalyzer:
         
         return branches
     
+    # From here, we can use OpenAI's API to create the test cases
     def _generate_test_cases(self, branches: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """Generate test cases using OpenAI API to cover all branches"""
         client = openai.OpenAI(api_key="api_key")
         prompt = self._create_test_case_prompt(branches)
         response = client.chat.completions.create(
-            model="gpt-4o-mini",  # or another appropriate model
+            model="gpt-4o-mini",  # FIXME: too broke for this model
+            # FIXED: Change prompt, make it so GPT actually understands the syntax we want
             messages=[
                 {"role": "system", "content": "You are a testing expert who creates comprehensive test cases for code."},
                 {"role": "user", "content": prompt}
@@ -106,7 +112,8 @@ class CodeAnalyzer:
             max_tokens=2000
         )
         
-        # Extract the generated test cases from the response
+        # extract test cases from response
+        # find total cases, and which ones passed
         try:
             test_cases_json = self._extract_json_from_response(response.choices[0].message.content)
             return test_cases_json
@@ -119,7 +126,6 @@ class CodeAnalyzer:
             }
     
     def _create_test_case_prompt(self, branches: List[Dict[str, Any]]) -> str:
-        """Create a prompt for OpenAI to generate test cases"""
         branch_descriptions = "\n".join([f"- {b['description']}" for b in branches])
         
         prompt = f"""
@@ -160,37 +166,37 @@ Focus on generating diverse inputs that cover all branches in the code, includin
 """
         return prompt
     
+    # OPENAI is going to give a JSON file back, which we need to extract and analyze
     def _extract_json_from_response(self, response_text: str) -> Dict[str, Any]:
-        """Extract JSON from the OpenAI response text"""
-        # Try to find JSON block in the response
+        
         json_match = re.search(r'```json\n(.*?)```', response_text, re.DOTALL)
         if json_match:
             json_str = json_match.group(1)
         else:
-            # If no code block, try to extract JSON directly
+            # If no code block, extract JSON directly
             json_str = response_text
         
-        # Clean up and parse the JSON
+        # clean up
+        # parse JSON
         try:
-            # Remove any explanation text before or after the JSON
+            # FIXED: removing any extra text that GPT gives
             json_str = re.sub(r'^[^{]*', '', json_str)
             json_str = re.sub(r'[^}]*$', '', json_str)
             return json.loads(json_str)
         except json.JSONDecodeError:
-            # Fallback: try to extract just the JSON object
+            # if that doesn't work, try to extract only the JSON object
             json_pattern = r'({[^{]*"total"[^}]*})'
             match = re.search(json_pattern, json_str, re.DOTALL)
             if match:
                 return json.loads(match.group(1))
             raise
     
+    # analyze the code for potential dead code
     def _analyze_dead_code(self) -> Dict[str, Any]:
-        """Analyze the code for potential dead code"""
-        # For TypeScript code, we'll use a simplified approach
         lines = self.code.split("\n")
         dead_code_instances = []
         
-        # Look for patterns that might indicate dead code
+        # find patterns that could indicate dead code
         for i, line in enumerate(lines):
             if "return" in line and i+1 < len(lines) and not lines[i+1].strip().startswith("}"):
                 dead_code_instances.append({
@@ -211,21 +217,20 @@ Focus on generating diverse inputs that cover all branches in the code, includin
             "instances": dead_code_instances
         }
     
+    # create the coverage report from test cases
+    # mark lines as covered based on the test cases
     def _analyze_coverage(self, test_cases: Dict[str, Any]) -> Dict[str, Any]:
-        """Create a coverage report based on the test cases"""
         lines = self.code.split("\n")
         covered_lines = [False] * len(lines)
         
-        # Mark lines as covered based on the test cases
-        # This is a simplified simulation of coverage
         if test_cases.get("cases"):
-            # Mark important structural lines as covered
+            #structural lines
             for i, line in enumerate(lines):
-                # Mark function declaration, returns, and key logic as covered
+                #function declaration, returns, and key logic
                 if any(keyword in line for keyword in ["function", "return", "const result", "await"]):
                     covered_lines[i] = True
                     
-                # Mark lines containing tested branches as covered
+                # covered tested branches
                 for case in test_cases.get("cases", []):
                     description = case.get("description", "")
                     branch_indicators = [
@@ -236,10 +241,11 @@ Focus on generating diverse inputs that cover all branches in the code, includin
                         "writeFile"
                     ]
                     
+                    #  mark as true so we can iterate and find percentage
                     if any(indicator in line and indicator in description for indicator in branch_indicators):
                         covered_lines[i] = True
         
-        # Calculate coverage percentage
+        # find and return the coverage percentage
         coverage_percentage = int((sum(covered_lines) / len(covered_lines)) * 100) if covered_lines else 0
         
         return {
@@ -248,7 +254,6 @@ Focus on generating diverse inputs that cover all branches in the code, includin
         }
 
 def main():
-    # Get file from arguments or input
     import sys
     if len(sys.argv) > 1:
         file_path = sys.argv[1]
@@ -257,14 +262,10 @@ def main():
     else:
         print("Please enter the TypeScript code to analyze (end with Ctrl+D on Unix or Ctrl+Z on Windows):")
         code = sys.stdin.read()
-    
-    # Initialize analyzer
     analyzer = CodeAnalyzer(code)
-    
-    # Run analysis
     result = analyzer.analyze()
     
-    # Output results
+    # output
     print(json.dumps(result, indent=2))
 
 if __name__ == "__main__":
